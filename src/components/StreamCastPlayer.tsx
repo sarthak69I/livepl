@@ -62,7 +62,6 @@ const StreamCastPlayer: React.FC<StreamCastPlayerProps> = ({ src }) => {
     if (controlsTimeoutRef.current) {
       clearTimeout(controlsTimeoutRef.current);
     }
-    // Hide controls only if video is playing and the playback speed menu is not open.
     controlsTimeoutRef.current = setTimeout(() => {
       if (isPlaying && !showPlaybackSpeedMenu) {
          setShowControls(false);
@@ -193,7 +192,7 @@ const StreamCastPlayer: React.FC<StreamCastPlayerProps> = ({ src }) => {
   useEffect(() => {
     const handleFullscreenChange = () => {
       setIsFullScreen(!!document.fullscreenElement);
-      setShowControls(true); // Always show controls briefly on fullscreen change
+      setShowControls(true); 
       if (!!document.fullscreenElement) {
         hideControlsAfterDelay();
       }
@@ -226,18 +225,14 @@ const StreamCastPlayer: React.FC<StreamCastPlayerProps> = ({ src }) => {
     if (!videoRef.current) return;
     const newVolume = parseFloat(e.target.value);
     videoRef.current.volume = newVolume;
-    // setVolume(newVolume); // Handled by 'volumechange' listener
-    // setIsMuted(newVolume === 0); // Handled by 'volumechange' listener
     setShowControls(true);
   };
 
   const toggleMute = useCallback(() => {
     if (!videoRef.current) return;
     videoRef.current.muted = !videoRef.current.muted;
-    // setIsMuted(videoRef.current.muted); // Handled by 'volumechange' listener
     if (!videoRef.current.muted && videoRef.current.volume === 0) { 
-      videoRef.current.volume = 0.5; // Set to a default volume if unmuting from 0
-      // setVolume(0.5); // Handled by 'volumechange' listener
+      videoRef.current.volume = 0.5; 
     }
   }, [videoRef]);
 
@@ -277,6 +272,23 @@ const StreamCastPlayer: React.FC<StreamCastPlayerProps> = ({ src }) => {
         });
     }
   }, [playerContainerRef]);
+
+  const handleVideoSingleClick = (event: React.MouseEvent<HTMLVideoElement>) => {
+    if (!videoRef.current || !playerContainerRef.current) return;
+
+    const videoRect = videoRef.current.getBoundingClientRect();
+    const clickX = event.clientX - videoRect.left;
+    const videoWidth = videoRect.width;
+
+    // Check if the click is in the middle third for play/pause
+    if (clickX >= videoWidth / 3 && clickX <= (videoWidth * 2) / 3) {
+      togglePlayPause();
+    }
+    // Single clicks on the left or right thirds do nothing in this handler.
+
+    setShowControls(true);
+    hideControlsAfterDelay();
+  };
   
   const handleVideoDoubleClick = (event: React.MouseEvent<HTMLVideoElement>) => {
     if (!videoRef.current || !playerContainerRef.current) return;
@@ -297,7 +309,7 @@ const StreamCastPlayer: React.FC<StreamCastPlayerProps> = ({ src }) => {
         videoRef.current.currentTime = newTime;
         setCurrentTime(newTime);
       }
-    } else { // Middle third
+    } else { // Middle third (for double click)
       toggleFullScreen();
     }
     setShowControls(true);
@@ -339,7 +351,6 @@ const StreamCastPlayer: React.FC<StreamCastPlayerProps> = ({ src }) => {
 
   useEffect(() => {
     const videoElement = videoRef.current;
-    // const playerElement = playerContainerRef.current; // Not directly needed in handler
 
     if (!videoElement) return;
 
@@ -381,11 +392,11 @@ const StreamCastPlayer: React.FC<StreamCastPlayerProps> = ({ src }) => {
         case 'arrowup':
           event.preventDefault();
           if (videoElement.muted) {
-            videoElement.muted = false; // Unmute first
+            videoElement.muted = false; 
           }
           let newVolumeUp = videoElement.volume + 0.1;
           if (videoElement.volume === 0 && newVolumeUp <= 0.1) {
-            newVolumeUp = 0.1; // Ensure it increases from 0
+            newVolumeUp = 0.1; 
           }
           videoElement.volume = Math.min(newVolumeUp, 1);
           break;
@@ -421,7 +432,8 @@ const StreamCastPlayer: React.FC<StreamCastPlayerProps> = ({ src }) => {
       <video 
         ref={videoRef} 
         className="w-full h-full object-contain" 
-        onDoubleClick={handleVideoDoubleClick} // Changed from onClick
+        onClick={handleVideoSingleClick}
+        onDoubleClick={handleVideoDoubleClick}
         playsInline 
       />
       
@@ -539,3 +551,4 @@ const StreamCastPlayer: React.FC<StreamCastPlayerProps> = ({ src }) => {
 };
 
 export default StreamCastPlayer;
+

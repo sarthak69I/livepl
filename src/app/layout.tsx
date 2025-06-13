@@ -1,10 +1,10 @@
 import type {Metadata} from 'next';
 import './globals.css';
-import { Toaster } from "@/components/ui/toaster"; // Added for potential future use of toasts
+import { Toaster } from "@/components/ui/toaster"; 
 
 export const metadata: Metadata = {
-  title: 'StreamCast',
-  description: 'Custom HLS video player for .m3u8 streams from castr.com.',
+  title: 'E-LEAK',
+  description: 'Custom HLS video player for .m3u8 streams.',
 };
 
 export default function RootLayout({
@@ -21,7 +21,7 @@ export default function RootLayout({
       </head>
       <body className="font-body antialiased flex flex-col min-h-screen">
         {children}
-        <Toaster /> {/* Added for potential future use of toasts */}
+        <Toaster /> 
       </body>
     </html>
   );
