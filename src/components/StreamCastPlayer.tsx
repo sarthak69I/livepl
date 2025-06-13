@@ -62,11 +62,10 @@ const StreamCastPlayer: React.FC<StreamCastPlayerProps> = ({ src }) => {
     if (controlsTimeoutRef.current) {
       clearTimeout(controlsTimeoutRef.current);
     }
+    // Hide controls only if video is playing and the playback speed menu is not open.
     controlsTimeoutRef.current = setTimeout(() => {
-      if (isPlaying && !showPlaybackSpeedMenu && !document.fullscreenElement) { // Keep controls if fullscreen and menu is closed
+      if (isPlaying && !showPlaybackSpeedMenu) {
          setShowControls(false);
-      } else if (isPlaying && !showPlaybackSpeedMenu && document.fullscreenElement) {
-         setShowControls(false); // Also hide in fullscreen if playing and menu closed
       }
     }, 3000);
   }, [isPlaying, showPlaybackSpeedMenu]);
