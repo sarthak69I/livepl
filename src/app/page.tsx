@@ -1,3 +1,4 @@
+
 "use client";
 
 import { Suspense, useEffect, useState } from 'react';
@@ -28,7 +29,9 @@ function PlayerPageContent() {
         setLiveUrl(null);
       }
     } else {
-      setError("No 'liveurl' parameter provided. Please use the format: ?liveurl=YOUR_STREAM_URL");
+      // If no 'liveurl' parameter, set error to null and liveUrl to null.
+      // The UI will then fall back to the "Preparing player..." state.
+      setError(null);
       setLiveUrl(null);
     }
     setIsLoadingParams(false);
@@ -54,7 +57,7 @@ function PlayerPageContent() {
   }
 
   if (!liveUrl) {
-     // This case should ideally be covered by error state, but as a fallback:
+     // This case will be hit if liveurl is not provided or is invalid and error is also null.
     return (
       <div className="flex flex-col items-center justify-center w-full h-full text-foreground p-8 text-center">
         <Loader2 className="h-12 w-12 animate-spin text-[hsl(var(--accent))] mb-4" />
