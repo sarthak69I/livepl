@@ -71,7 +71,7 @@ function PlayerPageContent() {
 
 export default function Home() {
   return (
-    <main className="w-screen h-screen bg-background text-foreground overflow-hidden flex flex-col">
+    <main className="flex-1 w-full bg-background text-foreground overflow-hidden flex flex-col">
       {/* Suspense is necessary for useSearchParams in Next.js App Router */}
       <Suspense fallback={
         <div className="flex flex-col items-center justify-center w-full h-full text-foreground p-8 text-center">
