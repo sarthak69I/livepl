@@ -1,3 +1,4 @@
+
 // @ts-nocheck
 "use client";
 
@@ -14,7 +15,10 @@ import {
   Minimize,
   Loader2,
   AlertTriangle,
+  CheckIcon,
 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 
 interface StreamCastPlayerProps {
   src: string;
@@ -27,6 +31,14 @@ const formatTime = (timeInSeconds: number): string => {
   const timeString = date.toISOString().substr(11, 8);
   return timeString.startsWith('00:') ? timeString.substr(3) : timeString;
 };
+
+const playbackRates = [
+  { rate: 0.75, label: "0.75x" },
+  { rate: 1.0, label: "Normal" },
+  { rate: 1.5, label: "1.5x" },
+  { rate: 2.0, label: "2.0x" },
+  { rate: 3.0, label: "3.0x" },
+];
 
 const StreamCastPlayer: React.FC<StreamCastPlayerProps> = ({ src }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -43,17 +55,19 @@ const StreamCastPlayer: React.FC<StreamCastPlayerProps> = ({ src }) => {
   const [showControls, setShowControls] = useState(true);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [currentPlaybackRate, setCurrentPlaybackRate] = useState(1.0);
+  const [showPlaybackSpeedMenu, setShowPlaybackSpeedMenu] = useState(false);
 
   const hideControlsAfterDelay = useCallback(() => {
     if (controlsTimeoutRef.current) {
       clearTimeout(controlsTimeoutRef.current);
     }
     controlsTimeoutRef.current = setTimeout(() => {
-      if (isPlaying) { // Only hide if playing
+      if (isPlaying && !showPlaybackSpeedMenu) {
         setShowControls(false);
       }
     }, 3000);
-  }, [isPlaying]);
+  }, [isPlaying, showPlaybackSpeedMenu]);
 
   useEffect(() => {
     if (!videoRef.current) return;
@@ -67,23 +81,18 @@ const StreamCastPlayer: React.FC<StreamCastPlayerProps> = ({ src }) => {
         hlsRef.current.destroy();
       }
       const hls = new Hls({
-         // For live streams, these configurations might be useful
-        liveSyncDurationCount: 3, // Number of segments to buffer ahead of the live edge
-        liveMaxLatencyDurationCount: 5, // Number of segments that can be behind live before seeking to live edge
-        liveDurationInfinity: true, // Indicates a live stream
+        liveSyncDurationCount: 3,
+        liveMaxLatencyDurationCount: 5,
+        liveDurationInfinity: true,
       });
       hlsRef.current = hls;
       hls.loadSource(src);
       hls.attachMedia(videoElement);
 
       hls.on(Hls.Events.MANIFEST_PARSED, () => {
-        // For live streams, duration might be Infinity.
-        // We can check if it's a live stream
         if (hls.levels.length > 0 && hls.levels[0].details && hls.levels[0].details.live) {
-          setDuration(Infinity); // Indicate live stream
+          setDuration(Infinity);
         }
-        // Autoplay is often blocked by browsers, so we might not call videoElement.play() here.
-        // User interaction is usually required.
         setIsLoading(false);
       });
       
@@ -96,7 +105,6 @@ const StreamCastPlayer: React.FC<StreamCastPlayerProps> = ({ src }) => {
               break;
             case Hls.ErrorTypes.MEDIA_ERROR:
               setError(`Media error: ${data.details}`);
-              // hls.recoverMediaError(); // Attempt to recover
               break;
             default:
               setError('An unrecoverable error occurred.');
@@ -143,7 +151,7 @@ const StreamCastPlayer: React.FC<StreamCastPlayerProps> = ({ src }) => {
     const handlePause = () => setIsPlaying(false);
     const handleTimeUpdate = () => setCurrentTime(video.currentTime);
     const handleLoadedMetadata = () => {
-      if (video.duration !== Infinity) { // Don't override if HLS set Infinity for live
+      if (video.duration !== Infinity) {
          setDuration(video.duration);
       }
     }
@@ -154,6 +162,7 @@ const StreamCastPlayer: React.FC<StreamCastPlayerProps> = ({ src }) => {
     const handleWaiting = () => setIsLoading(true);
     const handlePlaying = () => setIsLoading(false);
     const handleCanPlay = () => setIsLoading(false);
+    const handleRateChange = () => setCurrentPlaybackRate(video.playbackRate);
 
 
     video.addEventListener('play', handlePlay);
@@ -164,6 +173,8 @@ const StreamCastPlayer: React.FC<StreamCastPlayerProps> = ({ src }) => {
     video.addEventListener('waiting', handleWaiting);
     video.addEventListener('playing', handlePlaying);
     video.addEventListener('canplay', handleCanPlay);
+    video.addEventListener('ratechange', handleRateChange);
+
 
     return () => {
       video.removeEventListener('play', handlePlay);
@@ -174,6 +185,7 @@ const StreamCastPlayer: React.FC<StreamCastPlayerProps> = ({ src }) => {
       video.removeEventListener('waiting', handleWaiting);
       video.removeEventListener('playing', handlePlaying);
       video.removeEventListener('canplay', handleCanPlay);
+      video.removeEventListener('ratechange', handleRateChange);
     };
   }, []);
 
@@ -203,10 +215,10 @@ const StreamCastPlayer: React.FC<StreamCastPlayerProps> = ({ src }) => {
     } else {
       videoRef.current.pause();
     }
-    setShowControls(true); // Show controls on interaction
+    setShowControls(true); 
   };
 
-  const handleVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleVolumeInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!videoRef.current) return;
     const newVolume = parseFloat(e.target.value);
     videoRef.current.volume = newVolume;
@@ -219,7 +231,7 @@ const StreamCastPlayer: React.FC<StreamCastPlayerProps> = ({ src }) => {
     if (!videoRef.current) return;
     videoRef.current.muted = !videoRef.current.muted;
     setIsMuted(videoRef.current.muted);
-    if (!videoRef.current.muted && volume === 0) { // Unmuting when volume is 0, set to a default
+    if (!videoRef.current.muted && volume === 0) { 
       videoRef.current.volume = 0.5;
       setVolume(0.5);
     }
@@ -227,7 +239,7 @@ const StreamCastPlayer: React.FC<StreamCastPlayerProps> = ({ src }) => {
   };
 
   const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!videoRef.current || duration === Infinity) return; // Seeking not typical for live
+    if (!videoRef.current || duration === Infinity) return; 
     videoRef.current.currentTime = parseFloat(e.target.value);
     setCurrentTime(parseFloat(e.target.value));
     setShowControls(true);
@@ -244,6 +256,7 @@ const StreamCastPlayer: React.FC<StreamCastPlayerProps> = ({ src }) => {
   };
   
   const handlePlayerClick = () => {
+    if (showPlaybackSpeedMenu) return; // Don't toggle play/pause if menu is open
     togglePlayPause();
   }
 
@@ -253,7 +266,30 @@ const StreamCastPlayer: React.FC<StreamCastPlayerProps> = ({ src }) => {
   };
 
   const handleMouseLeave = () => {
-    if (isPlaying) { // Only start hide timer if playing
+    if (isPlaying && !showPlaybackSpeedMenu) { 
+      hideControlsAfterDelay();
+    }
+  };
+
+  const handlePlaybackRateChange = (rate: number) => {
+    if (videoRef.current) {
+      videoRef.current.playbackRate = rate;
+      setCurrentPlaybackRate(rate);
+    }
+    setShowPlaybackSpeedMenu(false);
+    setShowControls(true);
+    if (isPlaying) {
+      hideControlsAfterDelay();
+    }
+  };
+
+  const handlePlaybackMenuOpenChange = (open: boolean) => {
+    setShowPlaybackSpeedMenu(open);
+    setShowControls(true); // Keep controls visible when menu is interacted with
+    if (controlsTimeoutRef.current) {
+      clearTimeout(controlsTimeoutRef.current);
+    }
+    if (!open && isPlaying) { // If closing and video is playing, restart hide timer
       hideControlsAfterDelay();
     }
   };
@@ -286,7 +322,7 @@ const StreamCastPlayer: React.FC<StreamCastPlayerProps> = ({ src }) => {
           className={`absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 via-black/50 to-transparent p-3 md:p-4 transition-opacity duration-300 ease-in-out z-10 ${
             showControls ? 'opacity-100' : 'opacity-0 pointer-events-none'
           }`}
-          onClick={(e) => e.stopPropagation()} // Prevent player click through controls
+          onClick={(e) => e.stopPropagation()} 
         >
           {duration !== Infinity && (
              <input
@@ -321,7 +357,7 @@ const StreamCastPlayer: React.FC<StreamCastPlayerProps> = ({ src }) => {
                   max="1"
                   step="0.05"
                   value={isMuted ? 0 : volume}
-                  onChange={handleVolumeChange}
+                  onChange={handleVolumeInputChange}
                   className="w-0 md:w-20 h-1.5 ml-1 custom-slider accent-[hsl(var(--accent))] opacity-0 group-hover:w-20 group-hover:opacity-100 transition-all duration-300 ease-in-out"
                 />
               </div>
@@ -337,9 +373,39 @@ const StreamCastPlayer: React.FC<StreamCastPlayerProps> = ({ src }) => {
               </div>
             </div>
             <div className="flex items-center gap-2 md:gap-4">
-              <button className="text-foreground hover:text-[hsl(var(--accent))] transition-colors p-1 opacity-50 cursor-not-allowed" title="Settings (not available)">
-                <Settings size={20} />
-              </button>
+              <Popover open={showPlaybackSpeedMenu} onOpenChange={handlePlaybackMenuOpenChange}>
+                <PopoverTrigger asChild>
+                  <button 
+                    className="text-foreground hover:text-[hsl(var(--accent))] transition-colors p-1" 
+                    title="Playback Settings"
+                  >
+                    <Settings size={20} />
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent 
+                  side="top" 
+                  align="end" 
+                  className="w-auto p-2 bg-[hsl(var(--popover))] border-[hsl(var(--border))] shadow-lg rounded-md text-[hsl(var(--popover-foreground))]"
+                  onOpenAutoFocus={(e) => e.preventDefault()} // Prevents video pause on open
+                >
+                  <div className="flex flex-col gap-1">
+                    <p className="text-sm font-medium px-2 py-1 mb-1 border-b border-[hsl(var(--border))]">Playback Speed</p>
+                    {playbackRates.map((speed) => (
+                      <Button
+                        key={speed.rate}
+                        variant={currentPlaybackRate === speed.rate ? "secondary" : "ghost"}
+                        size="sm"
+                        className="w-full justify-start data-[active=true]:bg-[hsl(var(--accent))] data-[active=true]:text-[hsl(var(--accent-foreground))] hover:bg-[hsl(var(--accent))] hover:text-[hsl(var(--accent-foreground))]"
+                        onClick={() => handlePlaybackRateChange(speed.rate)}
+                        data-active={currentPlaybackRate === speed.rate}
+                      >
+                        {currentPlaybackRate === speed.rate && <CheckIcon size={16} className="mr-2" />}
+                        {speed.label}
+                      </Button>
+                    ))}
+                  </div>
+                </PopoverContent>
+              </Popover>
               <button onClick={toggleFullScreen} className="text-foreground hover:text-[hsl(var(--accent))] transition-colors p-1">
                 {isFullScreen ? <Minimize size={20} /> : <Maximize size={20} />}
               </button>
