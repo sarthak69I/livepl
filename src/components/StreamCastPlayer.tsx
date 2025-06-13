@@ -63,8 +63,10 @@ const StreamCastPlayer: React.FC<StreamCastPlayerProps> = ({ src }) => {
       clearTimeout(controlsTimeoutRef.current);
     }
     controlsTimeoutRef.current = setTimeout(() => {
-      if (isPlaying && !showPlaybackSpeedMenu) {
-        setShowControls(false);
+      if (isPlaying && !showPlaybackSpeedMenu && !document.fullscreenElement) { // Keep controls if fullscreen and menu is closed
+         setShowControls(false);
+      } else if (isPlaying && !showPlaybackSpeedMenu && document.fullscreenElement) {
+         setShowControls(false); // Also hide in fullscreen if playing and menu closed
       }
     }, 3000);
   }, [isPlaying, showPlaybackSpeedMenu]);
@@ -192,10 +194,14 @@ const StreamCastPlayer: React.FC<StreamCastPlayerProps> = ({ src }) => {
   useEffect(() => {
     const handleFullscreenChange = () => {
       setIsFullScreen(!!document.fullscreenElement);
+      setShowControls(true); // Always show controls briefly on fullscreen change
+      if (!!document.fullscreenElement) {
+        hideControlsAfterDelay();
+      }
     };
     document.addEventListener('fullscreenchange', handleFullscreenChange);
     return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
-  }, []);
+  }, [hideControlsAfterDelay]);
   
   useEffect(() => {
     if (showControls) {
@@ -208,57 +214,96 @@ const StreamCastPlayer: React.FC<StreamCastPlayerProps> = ({ src }) => {
     };
   }, [showControls, hideControlsAfterDelay]);
 
-  const togglePlayPause = () => {
+  const togglePlayPause = useCallback(() => {
     if (!videoRef.current) return;
     if (videoRef.current.paused || videoRef.current.ended) {
       videoRef.current.play().catch(err => console.error("Play error:", err));
     } else {
       videoRef.current.pause();
     }
-    setShowControls(true); 
-  };
+  }, [videoRef]);
 
   const handleVolumeInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!videoRef.current) return;
     const newVolume = parseFloat(e.target.value);
     videoRef.current.volume = newVolume;
-    setVolume(newVolume);
-    setIsMuted(newVolume === 0);
+    // setVolume(newVolume); // Handled by 'volumechange' listener
+    // setIsMuted(newVolume === 0); // Handled by 'volumechange' listener
     setShowControls(true);
   };
 
-  const toggleMute = () => {
+  const toggleMute = useCallback(() => {
     if (!videoRef.current) return;
     videoRef.current.muted = !videoRef.current.muted;
-    setIsMuted(videoRef.current.muted);
-    if (!videoRef.current.muted && volume === 0) { 
-      videoRef.current.volume = 0.5;
-      setVolume(0.5);
+    // setIsMuted(videoRef.current.muted); // Handled by 'volumechange' listener
+    if (!videoRef.current.muted && videoRef.current.volume === 0) { 
+      videoRef.current.volume = 0.5; // Set to a default volume if unmuting from 0
+      // setVolume(0.5); // Handled by 'volumechange' listener
     }
-    setShowControls(true);
-  };
+  }, [videoRef]);
 
   const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!videoRef.current || duration === Infinity) return; 
-    videoRef.current.currentTime = parseFloat(e.target.value);
-    setCurrentTime(parseFloat(e.target.value));
+    const newTime = parseFloat(e.target.value);
+    videoRef.current.currentTime = newTime;
+    setCurrentTime(newTime);
     setShowControls(true);
   };
 
-  const toggleFullScreen = () => {
-    if (!playerContainerRef.current) return;
+  const toggleFullScreen = useCallback(() => {
+    const container = playerContainerRef.current;
+    if (!container) return;
+
     if (!document.fullscreenElement) {
-      playerContainerRef.current.requestFullscreen().catch(err => console.error("Fullscreen error:", err));
+      container.requestFullscreen()
+        .then(() => {
+          if (screen.orientation && typeof screen.orientation.lock === 'function') {
+            screen.orientation.lock('landscape').catch(err => {
+              console.warn("Could not lock to landscape orientation:", err);
+            });
+          }
+        })
+        .catch(err => {
+          console.error("Error attempting to enable full-screen mode:", err);
+        });
     } else {
-      document.exitFullscreen();
+      document.exitFullscreen()
+        .then(() => {
+          if (screen.orientation && typeof screen.orientation.unlock === 'function') {
+            screen.orientation.unlock();
+          }
+        })
+        .catch(err => {
+          console.error("Error attempting to exit full-screen mode:", err);
+        });
+    }
+  }, [playerContainerRef]);
+  
+  const handleVideoDoubleClick = (event: React.MouseEvent<HTMLVideoElement>) => {
+    if (!videoRef.current || !playerContainerRef.current) return;
+
+    const videoRect = videoRef.current.getBoundingClientRect();
+    const clickX = event.clientX - videoRect.left;
+    const videoWidth = videoRect.width;
+
+    if (clickX < videoWidth / 3) { // Left third
+      if (duration !== Infinity) {
+        const newTime = Math.max(videoRef.current.currentTime - 5, 0);
+        videoRef.current.currentTime = newTime;
+        setCurrentTime(newTime);
+      }
+    } else if (clickX > (videoWidth * 2) / 3) { // Right third
+      if (duration !== Infinity) {
+        const newTime = Math.min(videoRef.current.currentTime + 5, duration);
+        videoRef.current.currentTime = newTime;
+        setCurrentTime(newTime);
+      }
+    } else { // Middle third
+      toggleFullScreen();
     }
     setShowControls(true);
+    hideControlsAfterDelay();
   };
-  
-  const handlePlayerClick = () => {
-    if (showPlaybackSpeedMenu) return; // Don't toggle play/pause if menu is open
-    togglePlayPause();
-  }
 
   const handleMouseMove = () => {
     setShowControls(true);
@@ -274,7 +319,6 @@ const StreamCastPlayer: React.FC<StreamCastPlayerProps> = ({ src }) => {
   const handlePlaybackRateChange = (rate: number) => {
     if (videoRef.current) {
       videoRef.current.playbackRate = rate;
-      setCurrentPlaybackRate(rate);
     }
     setShowPlaybackSpeedMenu(false);
     setShowControls(true);
@@ -285,14 +329,87 @@ const StreamCastPlayer: React.FC<StreamCastPlayerProps> = ({ src }) => {
 
   const handlePlaybackMenuOpenChange = (open: boolean) => {
     setShowPlaybackSpeedMenu(open);
-    setShowControls(true); // Keep controls visible when menu is interacted with
+    setShowControls(true); 
     if (controlsTimeoutRef.current) {
       clearTimeout(controlsTimeoutRef.current);
     }
-    if (!open && isPlaying) { // If closing and video is playing, restart hide timer
+    if (!open && isPlaying) { 
       hideControlsAfterDelay();
     }
   };
+
+  useEffect(() => {
+    const videoElement = videoRef.current;
+    // const playerElement = playerContainerRef.current; // Not directly needed in handler
+
+    if (!videoElement) return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const targetTagName = (event.target as HTMLElement).tagName;
+      if (targetTagName === 'INPUT' || targetTagName === 'TEXTAREA' || (event.target as HTMLElement).isContentEditable) {
+        return;
+      }
+
+      let requireControlsUpdate = true;
+
+      switch (event.key.toLowerCase()) {
+        case 'f':
+          toggleFullScreen();
+          break;
+        case ' ': 
+          event.preventDefault(); 
+          togglePlayPause();
+          break;
+        case 'm':
+          toggleMute();
+          break;
+        case 'arrowright':
+          if (duration !== Infinity) {
+            event.preventDefault();
+            const newTime = Math.min(videoElement.currentTime + 5, duration);
+            videoElement.currentTime = newTime;
+            setCurrentTime(newTime); 
+          }
+          break;
+        case 'arrowleft':
+          if (duration !== Infinity) {
+            event.preventDefault();
+            const newTime = Math.max(videoElement.currentTime - 5, 0);
+            videoElement.currentTime = newTime;
+            setCurrentTime(newTime); 
+          }
+          break;
+        case 'arrowup':
+          event.preventDefault();
+          if (videoElement.muted) {
+            videoElement.muted = false; // Unmute first
+          }
+          let newVolumeUp = videoElement.volume + 0.1;
+          if (videoElement.volume === 0 && newVolumeUp <= 0.1) {
+            newVolumeUp = 0.1; // Ensure it increases from 0
+          }
+          videoElement.volume = Math.min(newVolumeUp, 1);
+          break;
+        case 'arrowdown':
+          event.preventDefault();
+          videoElement.volume = Math.max(videoElement.volume - 0.1, 0);
+          break;
+        default:
+          requireControlsUpdate = false;
+          break;
+      }
+
+      if (requireControlsUpdate) {
+        setShowControls(true);
+        hideControlsAfterDelay();
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [togglePlayPause, toggleMute, toggleFullScreen, duration, hideControlsAfterDelay, setCurrentTime, videoRef]);
 
 
   return (
@@ -302,7 +419,12 @@ const StreamCastPlayer: React.FC<StreamCastPlayerProps> = ({ src }) => {
       onMouseMove={handleMouseMove}
       onMouseLeave={handleMouseLeave}
     >
-      <video ref={videoRef} className="w-full h-full object-contain" onClick={handlePlayerClick} playsInline />
+      <video 
+        ref={videoRef} 
+        className="w-full h-full object-contain" 
+        onDoubleClick={handleVideoDoubleClick} // Changed from onClick
+        playsInline 
+      />
       
       {isLoading && !error && (
         <div className="absolute inset-0 flex items-center justify-center bg-black/50 z-20">
@@ -386,7 +508,7 @@ const StreamCastPlayer: React.FC<StreamCastPlayerProps> = ({ src }) => {
                   side="top" 
                   align="end" 
                   className="w-auto p-2 bg-[hsl(var(--popover))] border-[hsl(var(--border))] shadow-lg rounded-md text-[hsl(var(--popover-foreground))]"
-                  onOpenAutoFocus={(e) => e.preventDefault()} // Prevents video pause on open
+                  onOpenAutoFocus={(e) => e.preventDefault()} 
                 >
                   <div className="flex flex-col gap-1">
                     <p className="text-sm font-medium px-2 py-1 mb-1 border-b border-[hsl(var(--border))]">Playback Speed</p>
