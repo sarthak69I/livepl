@@ -280,12 +280,9 @@ const StreamCastPlayer: React.FC<StreamCastPlayerProps> = ({ src }) => {
     const clickX = event.clientX - videoRect.left;
     const videoWidth = videoRect.width;
 
-    // Check if the click is in the middle third for play/pause
     if (clickX >= videoWidth / 3 && clickX <= (videoWidth * 2) / 3) {
       togglePlayPause();
     }
-    // Single clicks on the left or right thirds do nothing in this handler.
-
     setShowControls(true);
     hideControlsAfterDelay();
   };
@@ -297,19 +294,19 @@ const StreamCastPlayer: React.FC<StreamCastPlayerProps> = ({ src }) => {
     const clickX = event.clientX - videoRect.left;
     const videoWidth = videoRect.width;
 
-    if (clickX < videoWidth / 3) { // Left third
+    if (clickX < videoWidth / 3) { 
       if (duration !== Infinity) {
         const newTime = Math.max(videoRef.current.currentTime - 5, 0);
         videoRef.current.currentTime = newTime;
         setCurrentTime(newTime);
       }
-    } else if (clickX > (videoWidth * 2) / 3) { // Right third
+    } else if (clickX > (videoWidth * 2) / 3) { 
       if (duration !== Infinity) {
         const newTime = Math.min(videoRef.current.currentTime + 5, duration);
         videoRef.current.currentTime = newTime;
         setCurrentTime(newTime);
       }
-    } else { // Middle third (for double click)
+    } else { 
       toggleFullScreen();
     }
     setShowControls(true);
@@ -436,6 +433,12 @@ const StreamCastPlayer: React.FC<StreamCastPlayerProps> = ({ src }) => {
         onDoubleClick={handleVideoDoubleClick}
         playsInline 
       />
+      <div 
+        className="absolute top-2 right-2 text-xs text-white/70 z-[5] pointer-events-none"
+        style={{ textShadow: '0px 0px 2px rgba(0,0,0,0.5)' }}
+      >
+        e-leak.vercel.app
+      </div>
       
       {isLoading && !error && (
         <div className="absolute inset-0 flex items-center justify-center bg-black/50 z-20">
