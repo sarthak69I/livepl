@@ -72,15 +72,17 @@ function PlayerPageContent() {
 export default function Home() {
   return (
     <main className="flex-1 w-full bg-background text-foreground overflow-hidden flex flex-col">
-      {/* Suspense is necessary for useSearchParams in Next.js App Router */}
-      <Suspense fallback={
-        <div className="flex flex-col items-center justify-center w-full h-full text-foreground p-8 text-center">
-          <Loader2 className="h-12 w-12 animate-spin text-[hsl(var(--accent))] mb-4" />
-          <p>Initializing Player...</p>
-        </div>
-      }>
-        <PlayerPageContent />
-      </Suspense>
+      <div className="w-full h-full flex flex-col"> {/* Ensures content area fills main */}
+        {/* Suspense is necessary for useSearchParams in Next.js App Router */}
+        <Suspense fallback={
+          <div className="flex flex-col items-center justify-center w-full h-full text-foreground p-8 text-center">
+            <Loader2 className="h-12 w-12 animate-spin text-[hsl(var(--accent))] mb-4" />
+            <p>Initializing Player...</p>
+          </div>
+        }>
+          <PlayerPageContent />
+        </Suspense>
+      </div>
     </main>
   );
 }
