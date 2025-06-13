@@ -29,9 +29,8 @@ function PlayerPageContent() {
         setLiveUrl(null);
       }
     } else {
-      // If no 'liveurl' parameter, set error to null and liveUrl to null.
-      // The UI will then fall back to the "Preparing player..." state.
-      setError(null);
+      // If no 'liveurl' parameter, set an error message.
+      setError("Stream URL parameter 'liveurl' is missing.");
       setLiveUrl(null);
     }
     setIsLoadingParams(false);
@@ -56,12 +55,13 @@ function PlayerPageContent() {
     );
   }
 
+  // This case should ideally not be hit if error handling for missing URL is in place.
+  // However, keeping a fallback for safety, though the error state should now cover missing liveUrl.
   if (!liveUrl) {
-     // This case will be hit if liveurl is not provided or is invalid and error is also null.
     return (
       <div className="flex flex-col items-center justify-center w-full h-full text-foreground p-8 text-center">
         <Loader2 className="h-12 w-12 animate-spin text-[hsl(var(--accent))] mb-4" />
-        <p>Preparing player...</p>
+        <p>Preparing player...</p> {/* This message might change depending on how we handle !liveUrl without error */}
       </div>
     );
   }
