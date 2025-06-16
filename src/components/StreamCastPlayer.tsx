@@ -101,7 +101,11 @@ const StreamCastPlayer: React.FC<StreamCastPlayerProps> = ({ src }) => {
         if (data.fatal) {
           switch (data.type) {
             case Hls.ErrorTypes.NETWORK_ERROR:
-              setError(`Network error: ${data.details}`);
+              if (data.details === Hls.ErrorDetails.MANIFEST_LOAD_ERROR || data.details === Hls.ErrorDetails.MANIFEST_LOAD_TIMEOUT) {
+                setError("The live class is not started yet.");
+              } else {
+                setError(`Network error: ${data.details}`);
+              }
               break;
             case Hls.ErrorTypes.MEDIA_ERROR:
               setError(`Media error: ${data.details}`);
