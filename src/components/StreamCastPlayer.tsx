@@ -111,7 +111,7 @@ const StreamCastPlayer: React.FC<StreamCastPlayerProps> = ({ src }) => {
               if (data.details === Hls.ErrorDetails.MANIFEST_LOAD_ERROR || data.details === Hls.ErrorDetails.MANIFEST_LOAD_TIMEOUT) {
                 setError("The live class is not started yet.");
               } else {
-                setError(`Network error: ${data.details}`);
+                setError("The live class is not started yet.");
               }
               break;
             case Hls.ErrorTypes.MEDIA_ERROR:
@@ -318,7 +318,8 @@ const StreamCastPlayer: React.FC<StreamCastPlayerProps> = ({ src }) => {
         setCurrentTime(newTime);
       }
     } else { 
-      toggleFullScreen();
+      // No longer toggle fullscreen on double click middle, as single click handles play/pause
+      // toggleFullScreen(); 
     }
     setShowControls(true);
     hideControlsAfterDelay();
@@ -339,7 +340,7 @@ const StreamCastPlayer: React.FC<StreamCastPlayerProps> = ({ src }) => {
     if (videoRef.current) {
       videoRef.current.playbackRate = rate;
     }
-    setShowSettingsDialog(false);
+    setShowSettingsDialog(false); // Close dialog after selection
     setShowControls(true);
     if (isPlaying) {
       hideControlsAfterDelay();
@@ -459,7 +460,7 @@ const StreamCastPlayer: React.FC<StreamCastPlayerProps> = ({ src }) => {
 
       {error && (
         <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/80 text-destructive-foreground p-4 z-20">
-          <AlertTriangle className="h-12 w-12 mb-2" />
+          <AlertTriangle className="h-12 w-12 mb-2 text-destructive" />
           <p className="text-center">{error}</p>
         </div>
       )}
@@ -520,7 +521,7 @@ const StreamCastPlayer: React.FC<StreamCastPlayerProps> = ({ src }) => {
               </div>
             </div>
             <div className="flex items-center gap-2 md:gap-4">
-              <Dialog open={showSettingsDialog} onOpenChange={handleSettingsDialogOpenChange}>
+            <Dialog open={showSettingsDialog} onOpenChange={handleSettingsDialogOpenChange}>
                 <DialogTrigger asChild>
                   <button 
                     className="text-foreground hover:text-[hsl(var(--accent))] transition-colors p-1" 
@@ -532,6 +533,8 @@ const StreamCastPlayer: React.FC<StreamCastPlayerProps> = ({ src }) => {
                 <DialogContent 
                   className="w-auto max-w-xs"
                   onOpenAutoFocus={(e) => e.preventDefault()} 
+                  portalContainer={playerContainerRef.current}
+                  
                 >
                   <DialogHeader>
                     <DialogTitle>Playback Speed</DialogTitle>
