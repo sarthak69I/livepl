@@ -18,7 +18,14 @@ import {
   CheckIcon,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog';
+
 
 interface StreamCastPlayerProps {
   src: string;
@@ -56,18 +63,18 @@ const StreamCastPlayer: React.FC<StreamCastPlayerProps> = ({ src }) => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [currentPlaybackRate, setCurrentPlaybackRate] = useState(1.0);
-  const [showPlaybackSpeedMenu, setShowPlaybackSpeedMenu] = useState(false);
+  const [showSettingsDialog, setShowSettingsDialog] = useState(false);
 
   const hideControlsAfterDelay = useCallback(() => {
     if (controlsTimeoutRef.current) {
       clearTimeout(controlsTimeoutRef.current);
     }
     controlsTimeoutRef.current = setTimeout(() => {
-      if (isPlaying && !showPlaybackSpeedMenu) {
+      if (isPlaying && !showSettingsDialog) {
          setShowControls(false);
       }
     }, 3000);
-  }, [isPlaying, showPlaybackSpeedMenu]);
+  }, [isPlaying, showSettingsDialog]);
 
   useEffect(() => {
     if (!videoRef.current) return;
@@ -323,7 +330,7 @@ const StreamCastPlayer: React.FC<StreamCastPlayerProps> = ({ src }) => {
   };
 
   const handleMouseLeave = () => {
-    if (isPlaying && !showPlaybackSpeedMenu) { 
+    if (isPlaying && !showSettingsDialog) { 
       hideControlsAfterDelay();
     }
   };
@@ -332,15 +339,15 @@ const StreamCastPlayer: React.FC<StreamCastPlayerProps> = ({ src }) => {
     if (videoRef.current) {
       videoRef.current.playbackRate = rate;
     }
-    setShowPlaybackSpeedMenu(false);
+    setShowSettingsDialog(false);
     setShowControls(true);
     if (isPlaying) {
       hideControlsAfterDelay();
     }
   };
 
-  const handlePlaybackMenuOpenChange = (open: boolean) => {
-    setShowPlaybackSpeedMenu(open);
+  const handleSettingsDialogOpenChange = (open: boolean) => {
+    setShowSettingsDialog(open);
     setShowControls(true); 
     if (controlsTimeoutRef.current) {
       clearTimeout(controlsTimeoutRef.current);
@@ -513,23 +520,23 @@ const StreamCastPlayer: React.FC<StreamCastPlayerProps> = ({ src }) => {
               </div>
             </div>
             <div className="flex items-center gap-2 md:gap-4">
-              <Popover open={showPlaybackSpeedMenu} onOpenChange={handlePlaybackMenuOpenChange}>
-                <PopoverTrigger asChild>
+              <Dialog open={showSettingsDialog} onOpenChange={handleSettingsDialogOpenChange}>
+                <DialogTrigger asChild>
                   <button 
                     className="text-foreground hover:text-[hsl(var(--accent))] transition-colors p-1" 
                     title="Playback Settings"
                   >
                     <Settings size={20} />
                   </button>
-                </PopoverTrigger>
-                <PopoverContent 
-                  side="top" 
-                  align="end" 
-                  className="w-auto p-2 bg-[hsl(var(--popover))] border-[hsl(var(--border))] shadow-lg rounded-md text-[hsl(var(--popover-foreground))]"
+                </DialogTrigger>
+                <DialogContent 
+                  className="w-auto max-w-xs"
                   onOpenAutoFocus={(e) => e.preventDefault()} 
                 >
-                  <div className="flex flex-col gap-1">
-                    <p className="text-sm font-medium px-2 py-1 mb-1 border-b border-[hsl(var(--border))]">Playback Speed</p>
+                  <DialogHeader>
+                    <DialogTitle>Playback Speed</DialogTitle>
+                  </DialogHeader>
+                  <div className="flex flex-col gap-1 pt-2">
                     {playbackRates.map((speed) => (
                       <Button
                         key={speed.rate}
@@ -544,8 +551,8 @@ const StreamCastPlayer: React.FC<StreamCastPlayerProps> = ({ src }) => {
                       </Button>
                     ))}
                   </div>
-                </PopoverContent>
-              </Popover>
+                </DialogContent>
+              </Dialog>
               <button onClick={toggleFullScreen} className="text-foreground hover:text-[hsl(var(--accent))] transition-colors p-1">
                 {isFullScreen ? <Minimize size={20} /> : <Maximize size={20} />}
               </button>
@@ -558,4 +565,3 @@ const StreamCastPlayer: React.FC<StreamCastPlayerProps> = ({ src }) => {
 };
 
 export default StreamCastPlayer;
-
