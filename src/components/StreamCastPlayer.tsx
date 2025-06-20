@@ -48,12 +48,12 @@ const playbackRates = [
   { rate: 3.0, label: "3.0x" },
 ];
 
-interface QualityLevel {
-  index: number;
-  label: string;
-  height?: number;
-  bitrate?: number;
-}
+const QUALITY_OPTIONS = [
+  { label: "720p", id: '720p' as const },
+  { label: "360p", id: '360p' as const, suffix: "_2.m3u8" },
+  { label: "240p", id: '240p' as const, suffix: "_1.m3u8" },
+];
+const DEFAULT_720P_URL_SUFFIXES = ["_4.m3u8", "_5.m3u8"]; // File name part for 720p
 
 const StreamCastPlayer: React.FC<StreamCastPlayerProps> = ({ src }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -74,8 +74,9 @@ const StreamCastPlayer: React.FC<StreamCastPlayerProps> = ({ src }) => {
   const [showSettingsDialog, setShowSettingsDialog] = useState(false);
 
   const [settingsView, setSettingsView] = useState<'main' | 'quality' | 'speed'>('main');
-  const [availableQualities, setAvailableQualities] = useState<QualityLevel[]>([]);
-  const [currentQualityIndex, setCurrentQualityIndex] = useState<number>(-1); // -1 for auto
+  const [currentQualityLabel, setCurrentQualityLabel] = useState<string>("720p");
+  const [originalSrcBase, setOriginalSrcBase] = useState<string>("");
+  const [original720pSuffixAndQuery, setOriginal720pSuffixAndQuery] = useState<string>("");
 
 
   const hideControlsAfterDelay = useCallback(() => {
@@ -96,6 +97,44 @@ const StreamCastPlayer: React.FC<StreamCastPlayerProps> = ({ src }) => {
     setIsLoading(true);
     setError(null);
 
+    // Parse the initial src to store its base and original 720p suffix
+    const urlPattern = /^(.*\/index)(_[1-5])(\.m3u8.*)$/; // Matches base, index number, and .m3u8 + query
+    const match = src.match(urlPattern);
+
+    if (match) {
+      setOriginalSrcBase(match[1]); // e.g., "https://.../index"
+      const detectedSuffixPart = match[2]; // e.g., "_4"
+      const detectedM3u8AndQueryPart = match[3]; // e.g., ".m3u8?query=param"
+      const fullOriginalSuffixAndQuery = detectedSuffixPart + detectedM3u8AndQueryPart;
+      setOriginal720pSuffixAndQuery(fullOriginalSuffixAndQuery);
+
+      if (DEFAULT_720P_URL_SUFFIXES.some(s => fullOriginalSuffixAndQuery.startsWith(s))) {
+        setCurrentQualityLabel("720p");
+      } else if (fullOriginalSuffixAndQuery.startsWith("_2.m3u8")) {
+        setCurrentQualityLabel("360p");
+      } else if (fullOriginalSuffixAndQuery.startsWith("_1.m3u8")) {
+        setCurrentQualityLabel("240p");
+      } else {
+        setCurrentQualityLabel("720p"); // Fallback if pattern is unexpected
+      }
+    } else {
+      // Fallback for URLs not matching the specific index_X.m3u8 pattern
+      // Treat the whole src as the 720p source and try to make base assumptions.
+      // This part might need refinement if URLs vary significantly.
+      const lastSlash = src.lastIndexOf('/');
+      const lastDot = src.lastIndexOf('.m3u8');
+      if (lastSlash !== -1 && lastDot > lastSlash) {
+        setOriginalSrcBase(src.substring(0, lastDot - (src.substring(lastSlash+1, lastDot).length)));
+        setOriginal720pSuffixAndQuery(src.substring(lastDot - (src.substring(lastSlash+1, lastDot).length)));
+      } else { // Very basic fallback
+        setOriginalSrcBase(src);
+        setOriginal720pSuffixAndQuery("");
+      }
+      setCurrentQualityLabel("720p");
+      console.warn("StreamCastPlayer: Initial src URL pattern not fully recognized for quality switching. Defaulting to 720p.");
+    }
+
+
     if (Hls.isSupported()) {
       if (hlsRef.current) {
         hlsRef.current.destroy();
@@ -110,32 +149,10 @@ const StreamCastPlayer: React.FC<StreamCastPlayerProps> = ({ src }) => {
       hls.attachMedia(videoElement);
 
       hls.on(Hls.Events.MANIFEST_PARSED, (event, data) => {
-        if (videoRef.current && data.levels && data.levels.length > 0) {
-          const qualities = data.levels.map((level, index) => ({
-            index: index,
-            label: level.height ? `${level.height}p` : `Level ${index + 1} (${Math.round(level.bitrate / 1000)} kbps)`,
-            height: level.height,
-            bitrate: level.bitrate,
-          }));
-          setAvailableQualities([{ index: -1, label: 'Auto' }, ...qualities]);
-          
-          const hlsInstance = hlsRef.current;
-          if (hlsInstance) {
-            setCurrentQualityIndex(hlsInstance.autoLevelEnabled ? -1 : hlsInstance.currentLevel);
-          }
-        }
-        
         if (data.levels.length > 0 && data.levels[0].details && data.levels[0].details.live) {
           setDuration(Infinity);
         }
         setIsLoading(false);
-      });
-
-      hls.on(Hls.Events.LEVEL_SWITCHED, (event, data) => {
-        const hlsInstance = hlsRef.current;
-        if (hlsInstance) {
-         setCurrentQualityIndex(hlsInstance.autoLevelEnabled ? -1 : data.level);
-        }
       });
       
       hls.on(Hls.Events.ERROR, (event, data) => {
@@ -353,7 +370,7 @@ const StreamCastPlayer: React.FC<StreamCastPlayerProps> = ({ src }) => {
         setCurrentTime(newTime);
       }
     } else { 
-      // No longer toggle fullscreen on double click middle, as single click handles play/pause
+      // No longer toggle fullscreen on double click middle
     }
     setShowControls(true);
     hideControlsAfterDelay();
@@ -374,16 +391,70 @@ const StreamCastPlayer: React.FC<StreamCastPlayerProps> = ({ src }) => {
     if (videoRef.current) {
       videoRef.current.playbackRate = rate;
     }
-    // setSettingsView('main'); // Or keep on speed view
   };
 
-  const handleQualitySelect = (selectedIndex: number) => {
-    if (hlsRef.current) {
-      hlsRef.current.currentLevel = selectedIndex; // -1 for auto, specific index otherwise
-      setCurrentQualityIndex(selectedIndex);
+  const handleQualitySelect = (selectedQuality: typeof QUALITY_OPTIONS[number]) => {
+    if (!hlsRef.current || !originalSrcBase || !original720pSuffixAndQuery || !videoRef.current) return;
+
+    let newSrcUrl = "";
+    let newQualityLabel = selectedQuality.label;
+
+    if (selectedQuality.id === '720p') {
+      newSrcUrl = originalSrcBase + original720pSuffixAndQuery;
+    } else if (selectedQuality.suffix) {
+      // Extract query parameters from the original 720p suffix to append them
+      const m3u8Marker = ".m3u8";
+      const queryParamsStartIndex = original720pSuffixAndQuery.indexOf(m3u8Marker) + m3u8Marker.length;
+      const queryParams = original720pSuffixAndQuery.substring(queryParamsStartIndex);
+      newSrcUrl = originalSrcBase + selectedQuality.suffix + queryParams;
+    } else {
+      console.error("Invalid quality selection:", selectedQuality);
+      return; 
     }
+
+    // Avoid reloading if the source is already the target source
+    // videoRef.current.src can be blob:http... so direct comparison with newSrcUrl might fail.
+    // Better to rely on currentQualityLabel or reconstruct current playing URL if possible.
+    // For now, we'll assume if labels match, it's the same quality. More robust check might be needed.
+    if (currentQualityLabel === newQualityLabel && videoRef.current.src.includes(originalSrcBase + (selectedQuality.id === '720p' ? original720pSuffixAndQuery : selectedQuality.suffix))) {
+        // setSettingsView('main'); // Optionally go back to main settings
+        return;
+    }
+    
+    setIsLoading(true);
+    const currentTimePaused = videoRef.current.currentTime || 0;
+    const wasPlaying = !videoRef.current.paused;
+
+    hlsRef.current.loadSource(newSrcUrl);
+    hlsRef.current.once(Hls.Events.MANIFEST_PARSED, () => {
+      if (videoRef.current) {
+        videoRef.current.currentTime = currentTimePaused;
+        if (wasPlaying) {
+          videoRef.current.play().catch(e => console.error("Error re-playing after quality switch", e));
+        }
+        // setIsLoading(false); // isLoading is also handled by 'playing' and 'canplay' events
+      }
+    });
+    // Also handle native HLS if HLS.js is not used
+     if (!Hls.isSupported() && videoRef.current.canPlayType('application/vnd.apple.mpegurl')) {
+        videoRef.current.src = newSrcUrl;
+        videoRef.current.load(); // Important for native HLS
+        const nativeLoadHandler = () => {
+            if(videoRef.current) {
+                videoRef.current.currentTime = currentTimePaused;
+                if(wasPlaying) {
+                    videoRef.current.play().catch(e => console.error("Error re-playing after quality switch", e));
+                }
+            }
+            videoRef.current?.removeEventListener('loadedmetadata', nativeLoadHandler);
+        }
+        videoRef.current.addEventListener('loadedmetadata', nativeLoadHandler);
+    }
+
+    setCurrentQualityLabel(newQualityLabel);
     // setSettingsView('main'); // Or keep on quality view
   };
+
 
   const handleSettingsDialogOpenChange = (open: boolean) => {
     setShowSettingsDialog(open);
@@ -471,7 +542,6 @@ const StreamCastPlayer: React.FC<StreamCastPlayerProps> = ({ src }) => {
     };
   }, [togglePlayPause, toggleMute, toggleFullScreen, duration, hideControlsAfterDelay, setCurrentTime, videoRef]);
 
-  const currentQualityLabel = availableQualities.find(q => q.index === currentQualityIndex)?.label || 'Auto';
   const currentSpeedLabel = playbackRates.find(r => r.rate === currentPlaybackRate)?.label || 'Normal';
 
   return (
@@ -480,6 +550,7 @@ const StreamCastPlayer: React.FC<StreamCastPlayerProps> = ({ src }) => {
       className="relative w-full h-full bg-black flex items-center justify-center text-foreground select-none"
       onMouseMove={handleMouseMove}
       onMouseLeave={handleMouseLeave}
+      data-testid="player-container"
     >
       <video 
         ref={videoRef} 
@@ -487,6 +558,7 @@ const StreamCastPlayer: React.FC<StreamCastPlayerProps> = ({ src }) => {
         onClick={handleVideoSingleClick}
         onDoubleClick={handleVideoDoubleClick}
         playsInline 
+        data-testid="video-element"
       />
       <div 
         className="absolute top-2 right-2 text-xs text-white/70 z-[5] pointer-events-none"
@@ -496,13 +568,13 @@ const StreamCastPlayer: React.FC<StreamCastPlayerProps> = ({ src }) => {
       </div>
       
       {isLoading && !error && (
-        <div className="absolute inset-0 flex items-center justify-center bg-black/50 z-20">
+        <div className="absolute inset-0 flex items-center justify-center bg-black/50 z-20" data-testid="loading-indicator">
           <Loader2 className="h-12 w-12 animate-spin text-[hsl(var(--accent))]" />
         </div>
       )}
 
       {error && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/80 text-destructive-foreground p-4 z-20">
+        <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/80 text-destructive-foreground p-4 z-20" data-testid="error-message">
           <AlertTriangle className="h-12 w-12 mb-2 text-destructive" />
           <p className="text-center">{error}</p>
         </div>
@@ -514,6 +586,7 @@ const StreamCastPlayer: React.FC<StreamCastPlayerProps> = ({ src }) => {
             showControls ? 'opacity-100' : 'opacity-0 pointer-events-none'
           }`}
           onClick={(e) => e.stopPropagation()} 
+          data-testid="controls-overlay"
         >
           {duration !== Infinity && (
              <input
@@ -524,16 +597,17 @@ const StreamCastPlayer: React.FC<StreamCastPlayerProps> = ({ src }) => {
                 onChange={handleSeek}
                 className="w-full h-1.5 mb-2 custom-slider accent-[hsl(var(--accent))]"
                 disabled={duration === Infinity}
+                data-testid="seek-slider"
               />
           )}
          
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2 md:gap-4">
-              <button onClick={togglePlayPause} className="text-foreground hover:text-[hsl(var(--accent))] transition-colors p-1">
+              <button onClick={togglePlayPause} className="text-foreground hover:text-[hsl(var(--accent))] transition-colors p-1" data-testid="play-pause-button">
                 {isPlaying ? <Pause size={20} /> : <Play size={20} />}
               </button>
               <div className="flex items-center group">
-                <button onClick={toggleMute} className="text-foreground hover:text-[hsl(var(--accent))] transition-colors p-1">
+                <button onClick={toggleMute} className="text-foreground hover:text-[hsl(var(--accent))] transition-colors p-1" data-testid="mute-button">
                   {isMuted || volume === 0 ? (
                     <VolumeX size={20} />
                   ) : volume < 0.5 ? (
@@ -550,9 +624,10 @@ const StreamCastPlayer: React.FC<StreamCastPlayerProps> = ({ src }) => {
                   value={isMuted ? 0 : volume}
                   onChange={handleVolumeInputChange}
                   className="w-0 md:w-20 h-1.5 ml-1 custom-slider accent-[hsl(var(--accent))] opacity-0 group-hover:w-20 group-hover:opacity-100 transition-all duration-300 ease-in-out"
+                  data-testid="volume-slider"
                 />
               </div>
-              <div className="text-xs md:text-sm tabular-nums">
+              <div className="text-xs md:text-sm tabular-nums" data-testid="time-display">
                 <span>{formatTime(currentTime)}</span>
                 {duration !== Infinity && (
                   <>
@@ -570,14 +645,15 @@ const StreamCastPlayer: React.FC<StreamCastPlayerProps> = ({ src }) => {
                       className="text-foreground hover:text-[hsl(var(--accent))] transition-colors p-1" 
                       title="Playback Settings"
                       onClick={() => setSettingsView('main')}
+                      data-testid="settings-button"
                     >
                       <Settings size={20} />
                     </button>
                   </DialogTrigger>
                   <DialogContent 
-                    className="w-auto max-w-xs"
+                    className="w-auto max-w-xs" // Adjusted for potentially smaller content
                     onOpenAutoFocus={(e) => e.preventDefault()} 
-                    portalContainer={playerContainerRef.current}
+                    portalContainer={playerContainerRef.current} // Portal into player for fullscreen
                   >
                     {settingsView === 'main' && (
                       <>
@@ -585,12 +661,10 @@ const StreamCastPlayer: React.FC<StreamCastPlayerProps> = ({ src }) => {
                           <DialogTitle>Settings</DialogTitle>
                         </DialogHeader>
                         <div className="flex flex-col gap-2 pt-2">
-                          {availableQualities && availableQualities.length > 1 && (
-                            <Button variant="ghost" onClick={() => setSettingsView('quality')} className="w-full justify-between">
-                              <span>Quality</span>
-                              <span className="text-muted-foreground">{currentQualityLabel}</span>
-                            </Button>
-                          )}
+                          <Button variant="ghost" onClick={() => setSettingsView('quality')} className="w-full justify-between">
+                            <span>Quality</span>
+                            <span className="text-muted-foreground">{currentQualityLabel}</span>
+                          </Button>
                           <Button variant="ghost" onClick={() => setSettingsView('speed')} className="w-full justify-between">
                             <span>Speed</span>
                             <span className="text-muted-foreground">{currentSpeedLabel}</span>
@@ -607,16 +681,16 @@ const StreamCastPlayer: React.FC<StreamCastPlayerProps> = ({ src }) => {
                           <DialogTitle>Video Quality</DialogTitle>
                         </DialogHeader>
                         <div className="flex flex-col gap-1 pt-2 max-h-60 overflow-y-auto">
-                          {availableQualities.map((quality) => (
+                          {QUALITY_OPTIONS.map((quality) => (
                             <Button
-                              key={quality.index}
-                              variant={currentQualityIndex === quality.index ? "secondary" : "ghost"}
+                              key={quality.id}
+                              variant={currentQualityLabel === quality.label ? "secondary" : "ghost"}
                               size="sm"
                               className="w-full justify-start data-[active=true]:bg-[hsl(var(--accent))] data-[active=true]:text-[hsl(var(--accent-foreground))] hover:bg-[hsl(var(--accent))] hover:text-[hsl(var(--accent-foreground))]"
-                              onClick={() => handleQualitySelect(quality.index)}
-                              data-active={currentQualityIndex === quality.index}
+                              onClick={() => handleQualitySelect(quality)}
+                              data-active={currentQualityLabel === quality.label}
                             >
-                              {currentQualityIndex === quality.index && <CheckIcon size={16} className="mr-2" />}
+                              {currentQualityLabel === quality.label && <CheckIcon size={16} className="mr-2" />}
                               {quality.label}
                             </Button>
                           ))}
@@ -650,7 +724,7 @@ const StreamCastPlayer: React.FC<StreamCastPlayerProps> = ({ src }) => {
                     )}
                   </DialogContent>
                 </Dialog>
-              <button onClick={toggleFullScreen} className="text-foreground hover:text-[hsl(var(--accent))] transition-colors p-1">
+              <button onClick={toggleFullScreen} className="text-foreground hover:text-[hsl(var(--accent))] transition-colors p-1" data-testid="fullscreen-button">
                 {isFullScreen ? <Minimize size={20} /> : <Maximize size={20} />}
               </button>
             </div>
