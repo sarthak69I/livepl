@@ -16,6 +16,7 @@ import {
   Loader2,
   AlertTriangle,
   CheckIcon,
+  ArrowLeft,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -47,6 +48,13 @@ const playbackRates = [
   { rate: 3.0, label: "3.0x" },
 ];
 
+interface QualityLevel {
+  index: number;
+  label: string;
+  height?: number;
+  bitrate?: number;
+}
+
 const StreamCastPlayer: React.FC<StreamCastPlayerProps> = ({ src }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const playerContainerRef = useRef<HTMLDivElement>(null);
@@ -64,6 +72,11 @@ const StreamCastPlayer: React.FC<StreamCastPlayerProps> = ({ src }) => {
   const [error, setError] = useState<string | null>(null);
   const [currentPlaybackRate, setCurrentPlaybackRate] = useState(1.0);
   const [showSettingsDialog, setShowSettingsDialog] = useState(false);
+
+  const [settingsView, setSettingsView] = useState<'main' | 'quality' | 'speed'>('main');
+  const [availableQualities, setAvailableQualities] = useState<QualityLevel[]>([]);
+  const [currentQualityIndex, setCurrentQualityIndex] = useState<number>(-1); // -1 for auto
+
 
   const hideControlsAfterDelay = useCallback(() => {
     if (controlsTimeoutRef.current) {
@@ -96,11 +109,33 @@ const StreamCastPlayer: React.FC<StreamCastPlayerProps> = ({ src }) => {
       hls.loadSource(src);
       hls.attachMedia(videoElement);
 
-      hls.on(Hls.Events.MANIFEST_PARSED, () => {
-        if (hls.levels.length > 0 && hls.levels[0].details && hls.levels[0].details.live) {
+      hls.on(Hls.Events.MANIFEST_PARSED, (event, data) => {
+        if (videoRef.current && data.levels && data.levels.length > 0) {
+          const qualities = data.levels.map((level, index) => ({
+            index: index,
+            label: level.height ? `${level.height}p` : `Level ${index + 1} (${Math.round(level.bitrate / 1000)} kbps)`,
+            height: level.height,
+            bitrate: level.bitrate,
+          }));
+          setAvailableQualities([{ index: -1, label: 'Auto' }, ...qualities]);
+          
+          const hlsInstance = hlsRef.current;
+          if (hlsInstance) {
+            setCurrentQualityIndex(hlsInstance.autoLevelEnabled ? -1 : hlsInstance.currentLevel);
+          }
+        }
+        
+        if (data.levels.length > 0 && data.levels[0].details && data.levels[0].details.live) {
           setDuration(Infinity);
         }
         setIsLoading(false);
+      });
+
+      hls.on(Hls.Events.LEVEL_SWITCHED, (event, data) => {
+        const hlsInstance = hlsRef.current;
+        if (hlsInstance) {
+         setCurrentQualityIndex(hlsInstance.autoLevelEnabled ? -1 : data.level);
+        }
       });
       
       hls.on(Hls.Events.ERROR, (event, data) => {
@@ -319,7 +354,6 @@ const StreamCastPlayer: React.FC<StreamCastPlayerProps> = ({ src }) => {
       }
     } else { 
       // No longer toggle fullscreen on double click middle, as single click handles play/pause
-      // toggleFullScreen(); 
     }
     setShowControls(true);
     hideControlsAfterDelay();
@@ -340,15 +374,22 @@ const StreamCastPlayer: React.FC<StreamCastPlayerProps> = ({ src }) => {
     if (videoRef.current) {
       videoRef.current.playbackRate = rate;
     }
-    setShowSettingsDialog(false); // Close dialog after selection
-    setShowControls(true);
-    if (isPlaying) {
-      hideControlsAfterDelay();
+    // setSettingsView('main'); // Or keep on speed view
+  };
+
+  const handleQualitySelect = (selectedIndex: number) => {
+    if (hlsRef.current) {
+      hlsRef.current.currentLevel = selectedIndex; // -1 for auto, specific index otherwise
+      setCurrentQualityIndex(selectedIndex);
     }
+    // setSettingsView('main'); // Or keep on quality view
   };
 
   const handleSettingsDialogOpenChange = (open: boolean) => {
     setShowSettingsDialog(open);
+    if (!open) {
+      setSettingsView('main'); 
+    }
     setShowControls(true); 
     if (controlsTimeoutRef.current) {
       clearTimeout(controlsTimeoutRef.current);
@@ -430,6 +471,8 @@ const StreamCastPlayer: React.FC<StreamCastPlayerProps> = ({ src }) => {
     };
   }, [togglePlayPause, toggleMute, toggleFullScreen, duration, hideControlsAfterDelay, setCurrentTime, videoRef]);
 
+  const currentQualityLabel = availableQualities.find(q => q.index === currentQualityIndex)?.label || 'Auto';
+  const currentSpeedLabel = playbackRates.find(r => r.rate === currentPlaybackRate)?.label || 'Normal';
 
   return (
     <div
@@ -521,41 +564,92 @@ const StreamCastPlayer: React.FC<StreamCastPlayerProps> = ({ src }) => {
               </div>
             </div>
             <div className="flex items-center gap-2 md:gap-4">
-            <Dialog open={showSettingsDialog} onOpenChange={handleSettingsDialogOpenChange}>
-                <DialogTrigger asChild>
-                  <button 
-                    className="text-foreground hover:text-[hsl(var(--accent))] transition-colors p-1" 
-                    title="Playback Settings"
+              <Dialog open={showSettingsDialog} onOpenChange={handleSettingsDialogOpenChange}>
+                  <DialogTrigger asChild>
+                    <button 
+                      className="text-foreground hover:text-[hsl(var(--accent))] transition-colors p-1" 
+                      title="Playback Settings"
+                      onClick={() => setSettingsView('main')}
+                    >
+                      <Settings size={20} />
+                    </button>
+                  </DialogTrigger>
+                  <DialogContent 
+                    className="w-auto max-w-xs"
+                    onOpenAutoFocus={(e) => e.preventDefault()} 
+                    portalContainer={playerContainerRef.current}
                   >
-                    <Settings size={20} />
-                  </button>
-                </DialogTrigger>
-                <DialogContent 
-                  className="w-auto max-w-xs"
-                  onOpenAutoFocus={(e) => e.preventDefault()} 
-                  portalContainer={playerContainerRef.current}
-                  
-                >
-                  <DialogHeader>
-                    <DialogTitle>Playback Speed</DialogTitle>
-                  </DialogHeader>
-                  <div className="flex flex-col gap-1 pt-2">
-                    {playbackRates.map((speed) => (
-                      <Button
-                        key={speed.rate}
-                        variant={currentPlaybackRate === speed.rate ? "secondary" : "ghost"}
-                        size="sm"
-                        className="w-full justify-start data-[active=true]:bg-[hsl(var(--accent))] data-[active=true]:text-[hsl(var(--accent-foreground))] hover:bg-[hsl(var(--accent))] hover:text-[hsl(var(--accent-foreground))]"
-                        onClick={() => handlePlaybackRateChange(speed.rate)}
-                        data-active={currentPlaybackRate === speed.rate}
-                      >
-                        {currentPlaybackRate === speed.rate && <CheckIcon size={16} className="mr-2" />}
-                        {speed.label}
-                      </Button>
-                    ))}
-                  </div>
-                </DialogContent>
-              </Dialog>
+                    {settingsView === 'main' && (
+                      <>
+                        <DialogHeader>
+                          <DialogTitle>Settings</DialogTitle>
+                        </DialogHeader>
+                        <div className="flex flex-col gap-2 pt-2">
+                          {availableQualities && availableQualities.length > 1 && (
+                            <Button variant="ghost" onClick={() => setSettingsView('quality')} className="w-full justify-between">
+                              <span>Quality</span>
+                              <span className="text-muted-foreground">{currentQualityLabel}</span>
+                            </Button>
+                          )}
+                          <Button variant="ghost" onClick={() => setSettingsView('speed')} className="w-full justify-between">
+                            <span>Speed</span>
+                            <span className="text-muted-foreground">{currentSpeedLabel}</span>
+                          </Button>
+                        </div>
+                      </>
+                    )}
+                    {settingsView === 'quality' && (
+                      <>
+                        <DialogHeader className="relative flex items-center justify-center">
+                          <Button variant="ghost" size="icon" className="absolute left-0" onClick={() => setSettingsView('main')}>
+                            <ArrowLeft size={18} />
+                          </Button>
+                          <DialogTitle>Video Quality</DialogTitle>
+                        </DialogHeader>
+                        <div className="flex flex-col gap-1 pt-2 max-h-60 overflow-y-auto">
+                          {availableQualities.map((quality) => (
+                            <Button
+                              key={quality.index}
+                              variant={currentQualityIndex === quality.index ? "secondary" : "ghost"}
+                              size="sm"
+                              className="w-full justify-start data-[active=true]:bg-[hsl(var(--accent))] data-[active=true]:text-[hsl(var(--accent-foreground))] hover:bg-[hsl(var(--accent))] hover:text-[hsl(var(--accent-foreground))]"
+                              onClick={() => handleQualitySelect(quality.index)}
+                              data-active={currentQualityIndex === quality.index}
+                            >
+                              {currentQualityIndex === quality.index && <CheckIcon size={16} className="mr-2" />}
+                              {quality.label}
+                            </Button>
+                          ))}
+                        </div>
+                      </>
+                    )}
+                    {settingsView === 'speed' && (
+                      <>
+                        <DialogHeader className="relative flex items-center justify-center">
+                           <Button variant="ghost" size="icon" className="absolute left-0" onClick={() => setSettingsView('main')}>
+                            <ArrowLeft size={18} />
+                          </Button>
+                          <DialogTitle>Playback Speed</DialogTitle>
+                        </DialogHeader>
+                        <div className="flex flex-col gap-1 pt-2">
+                          {playbackRates.map((speed) => (
+                            <Button
+                              key={speed.rate}
+                              variant={currentPlaybackRate === speed.rate ? "secondary" : "ghost"}
+                              size="sm"
+                              className="w-full justify-start data-[active=true]:bg-[hsl(var(--accent))] data-[active=true]:text-[hsl(var(--accent-foreground))] hover:bg-[hsl(var(--accent))] hover:text-[hsl(var(--accent-foreground))]"
+                              onClick={() => handlePlaybackRateChange(speed.rate)}
+                              data-active={currentPlaybackRate === speed.rate}
+                            >
+                              {currentPlaybackRate === speed.rate && <CheckIcon size={16} className="mr-2" />}
+                              {speed.label}
+                            </Button>
+                          ))}
+                        </div>
+                      </>
+                    )}
+                  </DialogContent>
+                </Dialog>
               <button onClick={toggleFullScreen} className="text-foreground hover:text-[hsl(var(--accent))] transition-colors p-1">
                 {isFullScreen ? <Minimize size={20} /> : <Maximize size={20} />}
               </button>
@@ -568,3 +662,4 @@ const StreamCastPlayer: React.FC<StreamCastPlayerProps> = ({ src }) => {
 };
 
 export default StreamCastPlayer;
+
