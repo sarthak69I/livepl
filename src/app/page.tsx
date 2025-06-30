@@ -9,7 +9,8 @@ import { Loader2, AlertTriangle } from 'lucide-react';
 
 // Function to extract YouTube video ID from various URL formats
 function getYouTubeVideoId(url: string): string | null {
-  const regex = /(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/(?:watch\?v=|embed\/|live\/)|youtu\.be\/)([^?&\n\s]+)/;
+  // Regex to handle standard, shorts, live, and youtu.be links
+  const regex = /(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/(?:watch\?v=|embed\/|live\/|shorts\/)|youtu\.be\/)([^?&\n\s]+)/;
   const match = url.match(regex);
   return match ? match[1] : null;
 }
@@ -26,27 +27,26 @@ function PlayerPageContent() {
     const urlParam = searchParams.get('liveurl');
 
     if (urlParam) {
-      let decodedUrl = urlParam;
-      // First, attempt to decode from Base64
+      let potentialUrl = urlParam;
+      // Try to decode from Base64 first. If it succeeds, use the decoded value.
       try {
         const fromBase64 = atob(urlParam);
-        const testUrl = new URL(fromBase64); // Test if it's a valid URL
-        decodedUrl = fromBase64;
+        potentialUrl = fromBase64;
       } catch (e) {
-        // If it's not valid Base64 or not a valid URL, proceed with the original urlParam
+        // Not a Base64 string, so we'll proceed with the original urlParam.
       }
       
-      const videoId = getYouTubeVideoId(decodedUrl);
+      const videoId = getYouTubeVideoId(potentialUrl);
 
       if (videoId) {
         setStreamType('youtube');
         setYoutubeVideoId(videoId);
         setError(null);
-      } else if (decodedUrl.toLowerCase().endsWith('.m3u8')) {
+      } else if (potentialUrl.toLowerCase().endsWith('.m3u8')) {
         try {
-          new URL(decodedUrl); // Basic validation
+          new URL(potentialUrl); // Basic validation
           setStreamType('hls');
-          setStreamUrl(decodedUrl);
+          setStreamUrl(potentialUrl);
           setError(null);
         } catch (e) {
           setError("Invalid HLS stream URL format.");
