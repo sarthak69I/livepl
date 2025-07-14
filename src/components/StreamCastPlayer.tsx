@@ -1,4 +1,5 @@
 
+
 // @ts-nocheck
 "use client";
 
@@ -53,7 +54,7 @@ const QUALITY_OPTIONS = [
   { label: "360p", id: '360p' as const, suffix: "_2.m3u8" },
   { label: "240p", id: '240p' as const, suffix: "_1.m3u8" },
 ];
-const DEFAULT_720P_URL_SUFFIXES = ["_4.m3u8", "_5.m3u8"]; // File name part for 720p
+const DEFAULT_720P_URL_SUFFIXES = ["_4.m3u8", "_5.m3u8", "_3.m3u8"]; // File name part for 720p
 
 const StreamCastPlayer: React.FC<StreamCastPlayerProps> = ({ src }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -98,40 +99,39 @@ const StreamCastPlayer: React.FC<StreamCastPlayerProps> = ({ src }) => {
     setError(null);
 
     // Parse the initial src to store its base and original 720p suffix
-    const urlPattern = /^(.*\/index)(_[1-5])(\.m3u8.*)$/; // Matches base, index number, and .m3u8 + query
+    const urlPattern = /^(.*\/[^/]+?)(_[1-5])(\.m3u8.*)$/;
     const match = src.match(urlPattern);
 
     if (match) {
-      setOriginalSrcBase(match[1]); // e.g., "https://.../index"
-      const detectedSuffixPart = match[2]; // e.g., "_4"
-      const detectedM3u8AndQueryPart = match[3]; // e.g., ".m3u8?query=param"
-      const fullOriginalSuffixAndQuery = detectedSuffixPart + detectedM3u8AndQueryPart;
-      setOriginal720pSuffixAndQuery(fullOriginalSuffixAndQuery);
+        setOriginalSrcBase(match[1]); // e.g., "https://.../index" or "https://.../video_name"
+        const detectedSuffixPart = match[2] + match[3]; // e.g., "_4.m3u8?query=param"
+        setOriginal720pSuffixAndQuery(detectedSuffixPart);
 
-      if (DEFAULT_720P_URL_SUFFIXES.some(s => fullOriginalSuffixAndQuery.startsWith(s))) {
-        setCurrentQualityLabel("720p");
-      } else if (fullOriginalSuffixAndQuery.startsWith("_2.m3u8")) {
-        setCurrentQualityLabel("360p");
-      } else if (fullOriginalSuffixAndQuery.startsWith("_1.m3u8")) {
-        setCurrentQualityLabel("240p");
-      } else {
-        setCurrentQualityLabel("720p"); // Fallback if pattern is unexpected
-      }
+        if (DEFAULT_720P_URL_SUFFIXES.some(s => detectedSuffixPart.startsWith(s))) {
+            setCurrentQualityLabel("720p");
+        } else if (detectedSuffixPart.startsWith("_2.m3u8")) {
+            setCurrentQualityLabel("360p");
+        } else if (detectedSuffixPart.startsWith("_1.m3u8")) {
+            setCurrentQualityLabel("240p");
+        } else {
+            setCurrentQualityLabel("720p"); // Fallback if pattern is unexpected
+        }
     } else {
-      // Fallback for URLs not matching the specific index_X.m3u8 pattern
-      // Treat the whole src as the 720p source and try to make base assumptions.
-      // This part might need refinement if URLs vary significantly.
-      const lastSlash = src.lastIndexOf('/');
-      const lastDot = src.lastIndexOf('.m3u8');
-      if (lastSlash !== -1 && lastDot > lastSlash) {
-        setOriginalSrcBase(src.substring(0, lastDot - (src.substring(lastSlash+1, lastDot).length)));
-        setOriginal720pSuffixAndQuery(src.substring(lastDot - (src.substring(lastSlash+1, lastDot).length)));
-      } else { // Very basic fallback
-        setOriginalSrcBase(src);
-        setOriginal720pSuffixAndQuery("");
-      }
-      setCurrentQualityLabel("720p");
-      console.warn("StreamCastPlayer: Initial src URL pattern not fully recognized for quality switching. Defaulting to 720p.");
+        // Fallback for URLs not matching the specific pattern
+        const queryIndex = src.indexOf('?');
+        const pathPart = queryIndex !== -1 ? src.substring(0, queryIndex) : src;
+        const queryPart = queryIndex !== -1 ? src.substring(queryIndex) : "";
+        const m3u8Index = pathPart.lastIndexOf('.m3u8');
+        
+        if (m3u8Index !== -1) {
+            setOriginalSrcBase(pathPart.substring(0, m3u8Index));
+            setOriginal720pSuffixAndQuery(pathPart.substring(m3u8Index) + queryPart);
+        } else { // Very basic fallback
+            setOriginalSrcBase(src);
+            setOriginal720pSuffixAndQuery("");
+        }
+        setCurrentQualityLabel("720p");
+        console.warn("StreamCastPlayer: Initial src URL pattern not fully recognized for quality switching. Defaulting to 720p.");
     }
 
 
@@ -156,8 +156,12 @@ const StreamCastPlayer: React.FC<StreamCastPlayerProps> = ({ src }) => {
       });
       
       hls.on(Hls.Events.ERROR, (event, data) => {
-        console.error('HLS Error:', data);
-        if (data.fatal) {
+        if (data) {
+            console.error('HLS Error:', `Type: ${data.type}, Details: ${data.details}, Fatal: ${data.fatal}`);
+        } else {
+            console.error('HLS.Events.ERROR triggered. Raw data object:', data);
+        }
+        if (data && data.fatal) {
           switch (data.type) {
             case Hls.ErrorTypes.NETWORK_ERROR:
               if (data.details === Hls.ErrorDetails.MANIFEST_LOAD_ERROR || data.details === Hls.ErrorDetails.MANIFEST_LOAD_TIMEOUT) {
@@ -412,12 +416,7 @@ const StreamCastPlayer: React.FC<StreamCastPlayerProps> = ({ src }) => {
       return; 
     }
 
-    // Avoid reloading if the source is already the target source
-    // videoRef.current.src can be blob:http... so direct comparison with newSrcUrl might fail.
-    // Better to rely on currentQualityLabel or reconstruct current playing URL if possible.
-    // For now, we'll assume if labels match, it's the same quality. More robust check might be needed.
-    if (currentQualityLabel === newQualityLabel && videoRef.current.src.includes(originalSrcBase + (selectedQuality.id === '720p' ? original720pSuffixAndQuery : selectedQuality.suffix))) {
-        // setSettingsView('main'); // Optionally go back to main settings
+    if (currentQualityLabel === newQualityLabel) {
         return;
     }
     
@@ -432,10 +431,8 @@ const StreamCastPlayer: React.FC<StreamCastPlayerProps> = ({ src }) => {
         if (wasPlaying) {
           videoRef.current.play().catch(e => console.error("Error re-playing after quality switch", e));
         }
-        // setIsLoading(false); // isLoading is also handled by 'playing' and 'canplay' events
       }
     });
-    // Also handle native HLS if HLS.js is not used
      if (!Hls.isSupported() && videoRef.current.canPlayType('application/vnd.apple.mpegurl')) {
         videoRef.current.src = newSrcUrl;
         videoRef.current.load(); // Important for native HLS
@@ -452,7 +449,6 @@ const StreamCastPlayer: React.FC<StreamCastPlayerProps> = ({ src }) => {
     }
 
     setCurrentQualityLabel(newQualityLabel);
-    // setSettingsView('main'); // Or keep on quality view
   };
 
 
@@ -736,4 +732,3 @@ const StreamCastPlayer: React.FC<StreamCastPlayerProps> = ({ src }) => {
 };
 
 export default StreamCastPlayer;
-
